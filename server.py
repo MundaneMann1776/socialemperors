@@ -14,7 +14,7 @@ from get_game_config import get_game_config, patch_game_config
 
 print (" [+] Loading players...")
 from get_player_info import get_player_info, get_neighbor_info
-from sessions import load_saved_villages, all_saves_userid, all_saves_info, save_info, new_village, fb_friends_str
+from sessions import load_saved_villages, all_saves_userid, all_saves_info, save_info, new_village, fb_friends_str, session as get_save, save_session
 load_saved_villages()
 
 print (" [+] Loading server...")
@@ -31,6 +31,11 @@ host = '127.0.0.1'
 port = 5050
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
+app.config['SECRET_KEY'] = "SUPERSECUREKEY"
+
+# Register cheat menu API blueprint
+from cheat_api import cheat
+app.register_blueprint(cheat)
 
 print (" [+] Configuring server routes...")
 
@@ -75,10 +80,12 @@ def play():
     GAMEVERSION = session['GAMEVERSION']
     print("[PLAY] USERID:", USERID)
     print("[PLAY] GAMEVERSION:", GAMEVERSION)
-    return render_template("play.html", save_info=save_info(USERID), serverTime=timestamp_now(), friendsInfo=fb_friends_str(USERID), version=version_name, GAMEVERSION=GAMEVERSION, SERVERIP=host)
+    # Use Ruffle by default for modern browser compatibility
+    return render_template("ruffle.html", save_info=save_info(USERID), serverTime=timestamp_now(), version=version_name, GAMEVERSION=GAMEVERSION, SERVERIP=host)
 
-@app.route("/ruffle.html")
-def ruffle():
+@app.route("/play_flash.html")
+def play_flash():
+    """Legacy Flash embed for use with Flash-capable browsers"""
     print(session)
 
     if 'USERID' not in session:
@@ -91,9 +98,14 @@ def ruffle():
     
     USERID = session['USERID']
     GAMEVERSION = session['GAMEVERSION']
-    print("[RUFFLE] USERID:", USERID)
-    print("[RUFFLE] GAMEVERSION:", GAMEVERSION)
-    return render_template("ruffle.html", save_info=save_info(USERID), serverTime=timestamp_now(), version=version_name, GAMEVERSION=GAMEVERSION, SERVERIP=host)
+    print("[PLAY FLASH] USERID:", USERID)
+    print("[PLAY FLASH] GAMEVERSION:", GAMEVERSION)
+    return render_template("play.html", save_info=save_info(USERID), serverTime=timestamp_now(), friendsInfo=fb_friends_str(USERID), version=version_name, GAMEVERSION=GAMEVERSION, SERVERIP=host)
+
+@app.route("/ruffle.html")
+def ruffle():
+    """Redirect to main play route (now uses Ruffle by default)"""
+    return redirect("/play.html")
 
 
 @app.route("/new.html")
@@ -101,6 +113,32 @@ def new():
     session['USERID'] = new_village()
     session['GAMEVERSION'] = "SocialEmpires0926bsec.swf"
     return redirect("play.html")
+
+
+@app.route("/boost")
+def boost():
+    """Give player 10k cash and 1M of all resources, then reload game."""
+    if 'USERID' not in session:
+        return redirect("/")
+    
+    USERID = session['USERID']
+    save = get_save(USERID)
+    
+    # Add resources
+    save["playerInfo"]["cash"] = save["playerInfo"].get("cash", 0) + 10000
+    save["maps"][0]["coins"] = save["maps"][0].get("coins", 0) + 1000000
+    save["maps"][0]["stone"] = save["maps"][0].get("stone", 0) + 1000000
+    save["maps"][0]["wood"] = save["maps"][0].get("wood", 0) + 1000000
+    save["maps"][0]["food"] = save["maps"][0].get("food", 0) + 1000000
+    
+    # Save to disk
+    save_session(USERID)
+    
+    print(f"[BOOST] Added 10k cash + 1M resources to {USERID}")
+    
+    # Redirect to force Flash client to reload fresh data
+    return redirect("/play.html")
+
 
 @app.route("/crossdomain.xml")
 def crossdomain():
@@ -113,6 +151,11 @@ def images(path):
 @app.route("/css/<path:path>")
 def css(path):
     return send_from_directory(TEMPLATES_DIR + "/css", path)
+
+@app.route("/assets/ruffle/<path:path>")
+def serve_ruffle(path):
+    """Serve locally bundled Ruffle files for offline play."""
+    return send_from_directory(ASSETS_DIR + "/ruffle", path)
 
 ## GAME STATIC
 
@@ -150,11 +193,11 @@ def static_assets_loader(path):
                 return ("", 404)
 
             print(f"====== DOWNLOADED ASSET: {URL}")
-            return send_from_directory("{BASE_DIR}/download_assets/assets", path)
+            return send_from_directory(f"{BASE_DIR}/download_assets/assets", path)
         else:
             # Use downloaded CDN asset
             print(f"====== USING EXTERNAL: download_assets/assets/{path}")
-            return send_from_directory("{BASE_DIR}/download_assets/assets", path)
+            return send_from_directory(f"{BASE_DIR}/download_assets/assets", path)
     else:
         # Use provided asset
         return send_from_directory(ASSETS_DIR, path)
@@ -279,19 +322,27 @@ def get_continent_ranking_response():
     town_id = request.values['map']
     user_key = request.values['user_key']
 
-    # TODO - stub
+    # Build ranking from real player data
+    saves = all_saves_info()
+    
+    # Sort by level descending
+    saves.sort(key=lambda x: x.get("level", 0), reverse=True)
+    
+    continent = []
+    for i, save in enumerate(saves[:8]):  # Top 8 players
+        continent.append({
+            "posicion": i,
+            "nivel": save.get("level", 1),
+            "user_id": save.get("userid", "")
+        })
+    
+    # Fill remaining slots
+    while len(continent) < 8:
+        continent.append({"posicion": len(continent), "nivel": 0})
+    
     response = {
         "world_id": 0,
-        "continent": [
-            {"posicion": 0, "nivel": 1, "user_id": 1111}, # villages/AcidCaos
-            {"posicion": 1, "nivel": 0},
-            {"posicion": 2, "nivel": 0},
-            {"posicion": 3, "nivel": 0},
-            {"posicion": 4, "nivel": 0},
-            {"posicion": 5, "nivel": 0},
-            {"posicion": 6, "nivel": 0},
-            {"posicion": 7, "nivel": 0}
-        ]
+        "continent": continent
     }
     return(response)
 
@@ -303,5 +354,6 @@ def get_continent_ranking_response():
 print (" [+] Running server...")
 
 if __name__ == '__main__':
-    app.secret_key = 'SECRET_KEY'
+    import secrets
+    app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(16))
     app.run(host=host, port=port, debug=False)

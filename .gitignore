@@ -12,3 +12,5 @@ Include/
 Lib/
 Scripts/
 pyvenv.cfg
+villages/quests/
+*.log

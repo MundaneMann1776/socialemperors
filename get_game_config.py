@@ -58,7 +58,7 @@ def patch_game_config():
             if mod.startswith("#"):
                 continue
             if mod != "":
-                mod.replace(".json", "")
+                mod = mod.replace(".json", "")
                 mod_path = f"{MODS_DIR}/{mod}.json"
                 if os.path.exists(mod_path):
                     apply_config_patch(mod_path)
