@@ -2,7 +2,7 @@
     "playerInfo": {
         "pid": "1111",
         "name": "AcidCaos",
-        "pic": "https://avatars.githubusercontent.com/u/11525599?s=100",
+        "pic": "http://127.0.0.1:5050/img/profile/acidcaos.png",
         "cash": 0,
         "completed_tutorial": 1,
         "default_map": 0,
