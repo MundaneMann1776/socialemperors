@@ -37,6 +37,31 @@ __initial_village = json.load(open(os.path.join(VILLAGES_DIR, "initial.json")))
 
 # Load saved villages
 
+# Helper: Clean expired graveyard entries
+def clean_graveyard(save):
+    """Remove expired units from graveyard."""
+    if "privateState" not in save or "graveyard" not in save["privateState"]:
+        return False
+    
+    now = timestamp_now()
+    graveyard = save["privateState"]["graveyard"]
+    
+    # Filter out expired entries
+    # Note: Older saves might not have 'expires_at', so we treat them as valid
+    new_graveyard = [
+        g for g in graveyard
+        if g.get("expires_at", now + 1) > now
+    ]
+    
+    # Check if any were removed
+    if len(new_graveyard) < len(graveyard):
+        removed_count = len(graveyard) - len(new_graveyard)
+        save["privateState"]["graveyard"] = new_graveyard
+        print(f"   - Removed {removed_count} expired units from graveyard")
+        return True
+    
+    return False
+
 def load_saved_villages():
     global __villages
     global __saves
@@ -48,8 +73,8 @@ def load_saved_villages():
         try:
             print(f"Creating '{SAVES_DIR}' folder...")
             os.mkdir(SAVES_DIR)
-        except:
-            print(f"Could not create '{SAVES_DIR}' folder.")
+        except OSError as e:
+            print(f"Could not create '{SAVES_DIR}' folder: {e}")
             exit(1)
     if not os.path.isdir(SAVES_DIR):
         print(f"'{SAVES_DIR}' is not a folder... Move the file somewhere else.")
@@ -85,12 +110,13 @@ def load_saved_villages():
         USERID = save["playerInfo"]["pid"]
         try:
             map_name = save["playerInfo"]["map_names"][ save["playerInfo"]["default_map"] ]
-        except:
+        except (KeyError, IndexError, TypeError):
             map_name = '?'
         print(f"({map_name}) Ok.")
         __saves[str(USERID)] = save
         modified = migrate_loaded_save(save) # check save version for migration
-        if modified:
+        cleaned = clean_graveyard(save)      # check for expired items
+        if modified or cleaned:
             save_session(USERID)
     
 
@@ -150,8 +176,6 @@ def neighbor_session(USERID: str) -> dict:
         return __villages[USERID]
 
 def fb_friends_str(USERID: str) -> list:
-    DELETE_ME = [{"uid": "1111", "pic_square":"http://127.0.0.1:5050/img/profile/Paladin_Justiciero.jpg"},
-        {"uid": "aa_002", "pic_square":"/1025.png"}]
     friends = []
     # static villages
     for key in __villages:
@@ -234,12 +258,26 @@ def is_valid_village(save: dict):
 
 # Persistency
 
-def backup_session(USERID: str):
-    # TODO 
-    return
+def backup_session(USERID: str) -> bool:
+    """Create a backup of the save file before major operations."""
+    import shutil
+    from datetime import datetime
+    
+    source = os.path.join(SAVES_DIR, f"{USERID}.save.json")
+    if not os.path.exists(source):
+        return False
+    
+    backup_dir = os.path.join(SAVES_DIR, "backups")
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = os.path.join(backup_dir, f"{USERID}_{timestamp}.save.json")
+    shutil.copy2(source, dest)
+    print(f" * Backup created: {dest}")
+    return True
 
 def save_session(USERID: str):
-    # TODO 
     file = f"{USERID}.save.json"
     print(f" * Saving village at {file}... ", end='')
     village = session(USERID)

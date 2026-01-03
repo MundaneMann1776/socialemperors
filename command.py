@@ -113,7 +113,38 @@ def do_command(USERID, cmd, args):
             if get_attribute_from_item_id(id, "cost_type") != "c":
                 apply_cost(save["playerInfo"], save["maps"][town_id], id, price_multiplier)
         if reason == 'KILL':
-            pass # TODO : add to graveyard
+            # Add to graveyard for potential resurrection
+            if "graveyard" not in save["privateState"]:
+                save["privateState"]["graveyard"] = []
+            
+            # Capacity limit (original game had 20 slots)
+            MAX_GRAVEYARD = 20
+            if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
+                # Remove oldest entry
+                save["privateState"]["graveyard"].pop(0)
+                print(f"  -> Graveyard full, removed oldest entry")
+            
+            # Add entry with 48-hour expiration
+            graveyard_entry = {
+                "unit_id": id,
+                "timestamp": timestamp_now(),
+                "expires_at": timestamp_now() + (48 * 3600),  # 48 hours
+                "town_id": town_id
+            }
+            save["privateState"]["graveyard"].append(graveyard_entry)
+            print(f"  -> Added to graveyard (expires in 48 hours)")
+        
+        if reason == 'SQEST':
+            # Track units entering quest for later survivor/death processing
+            if "quest_units" not in save["privateState"]:
+                save["privateState"]["quest_units"] = []
+            save["privateState"]["quest_units"].append({
+                "unit_id": id,
+                "x": x,
+                "y": y,
+                "town_id": town_id
+            })
+            print(f"  -> Unit entered quest (SQEST tracking)")
     
     elif cmd == Constant.CMD_KILL:
         x = args[0]
@@ -134,7 +165,9 @@ def do_command(USERID, cmd, args):
         skipped_with_cash = bool(args[1])
         print("Complete mission", mission_id, ":", str(get_attribute_from_mission_id(mission_id, "title")))
         if skipped_with_cash:
-            cash_to_substract = 0 # TODO 
+            # Get skip cost from mission config (default to 5 cash if not specified)
+            skip_cost = get_attribute_from_mission_id(mission_id, "skip_cost")
+            cash_to_substract = int(skip_cost) if skip_cost else 5
             save["playerInfo"]["cash"] = max(save["playerInfo"]["cash"] - cash_to_substract, 0)
         save["privateState"]["completedMissions"] += [mission_id]
     
@@ -455,6 +488,32 @@ def do_command(USERID, cmd, args):
         # add potion
         save["privateState"]["potion"] += amount
 
+    elif cmd == Constant.CMD_PUT_GRAVEYARD:
+        unit_id = args[0]
+        town_id = args[1] if len(args) > 1 else 0
+        print(f"Put unit {get_name_from_item_id(unit_id)} (ID: {unit_id}) into graveyard")
+        
+        # Initialize graveyard if needed
+        if "graveyard" not in save["privateState"]:
+            save["privateState"]["graveyard"] = []
+        
+        # Capacity limit (original game had 20 slots)
+        MAX_GRAVEYARD = 20
+        if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
+            # Remove oldest entry
+            save["privateState"]["graveyard"].pop(0)
+            print("  -> Graveyard full, removed oldest")
+        
+        # Add to graveyard with 48-hour expiration
+        graveyard_entry = {
+            "unit_id": unit_id,
+            "timestamp": timestamp_now(),
+            "expires_at": timestamp_now() + (48 * 3600),  # 48 hours
+            "town_id": town_id
+        }
+        save["privateState"]["graveyard"].append(graveyard_entry)
+        print(f"  -> Added to graveyard (expires in 48 hours)")
+
     elif cmd == Constant.CMD_RESURRECT_HERO:
         unit_id = args[0]
         x = args[1]
@@ -467,12 +526,16 @@ def do_command(USERID, cmd, args):
             quantity = 1
             save["privateState"]["potion"] = max(int(save["privateState"]["potion"] - quantity), 0)
         else:
-            pass # TODO 
+            # Pay with cash - cost based on unit strength (default 10 cash)
+            unit_life = get_attribute_from_item_id(unit_id, "life")
+            resurrection_cost = max(5, int(unit_life) // 100) if unit_life else 10
+            save["playerInfo"]["cash"] = max(save["playerInfo"]["cash"] - resurrection_cost, 0)
         # Place unit
         collected_at_timestamp = timestamp_now()
-        level = 0 # TODO 
+        level = 0
         orientation = 0
-        map["items"] += [[id, x, y, orientation, collected_at_timestamp, level]]
+        map = save["maps"][town_id]
+        map["items"] += [[unit_id, x, y, orientation, collected_at_timestamp, level]]
 
     elif cmd == Constant.CMD_BUY_SUPER_OFFER_PACK:
         town_id = args[0]
@@ -510,31 +573,124 @@ def do_command(USERID, cmd, args):
         town_id = data["map"]
         gold_gained = data["resources"]["g"]
         xp_gained = data["resources"]["x"]
-        units = data["units"]
+        units = data["units"]  # List of surviving unit IDs
         win = data["win"] == 1
         duration_sec = data["duration"]
         voluntary_end = data["voluntary_end"] == 1
         quest_id = int(data["quest_id"])
         item_rewards = data["item_rewards"] if "item_rewards" in data else None
         activators_left = data["activators_left"] if "activators_left" in data else None
-        difficulty = data["difficulty"]
+        difficulty = int(data["difficulty"])  # 1, 2, or 3 stars
 
-        # Resources
+        # Always award resources (even on loss you get some)
         save["maps"][town_id]["coins"] += int(gold_gained)
         save["maps"][town_id]["xp"] += int(xp_gained)
 
-        # Update quests data
-        save["privateState"]["unlockedQuestIndex"] = max(quest_id + 1, save["privateState"]["unlockedQuestIndex"], 0)
-        # save["privateState"]["questsRank"] = TODO 
-        # save["maps"]["questTimes"] [quest_id] = TODO min (... , duration_sec)
-        # save["maps"]["lastQuestTimes"] [quest_id] = TODO min (... , duration_sec)
-
-        print(f"Ended quest {quest_id}.")
+        # Only process win results
+        if win and not voluntary_end:
+            # Update quest rank (stars) - difficulty is which star level (1, 2, or 3)
+            quest_key = str(quest_id)
+            if "questsRank" not in save["privateState"]:
+                save["privateState"]["questsRank"] = {}
+            
+            current_rank = save["privateState"]["questsRank"].get(quest_key, 0)
+            # Only update if this difficulty is higher than current
+            if difficulty > current_rank:
+                save["privateState"]["questsRank"][quest_key] = difficulty
+                print(f"  -> Awarded {difficulty} star(s) for quest {quest_id}!")
+            
+            # Unlock next quest
+            save["privateState"]["unlockedQuestIndex"] = max(quest_id + 1, save["privateState"].get("unlockedQuestIndex", 0))
+            
+            # Track quest times using dictionary (NOT array - quest IDs are huge like 100000006)
+            quest_key = str(quest_id)
+            quest_times = save["maps"][town_id].get("questTimes", {})
+            last_quest_times = save["maps"][town_id].get("lastQuestTimes", {})
+            
+            # Convert old array format to dict if needed
+            if isinstance(quest_times, list):
+                quest_times = {}
+            if isinstance(last_quest_times, list):
+                last_quest_times = {}
+            
+            # Update with best/last times
+            current_best = quest_times.get(quest_key, 999999)
+            quest_times[quest_key] = min(current_best, duration_sec)
+            last_quest_times[quest_key] = duration_sec
+            
+            save["maps"][town_id]["questTimes"] = quest_times
+            save["maps"][town_id]["lastQuestTimes"] = last_quest_times
+            
+            print(f"Quest {quest_id} WON at difficulty {difficulty}! Duration: {duration_sec}s")
+        else:
+            if voluntary_end:
+                print(f"Quest {quest_id} voluntarily ended (no rewards)")
+            else:
+                print(f"Quest {quest_id} LOST")
+        
+        # Process quest units - survivors return, dead go to graveyard
+        quest_units = save["privateState"].get("quest_units", [])
+        if quest_units:
+            # Parse survivor unit IDs from the data
+            survivor_ids = set()
+            for u in units:
+                if isinstance(u, dict):
+                    survivor_ids.add(u.get("id", u.get("unit_id")))
+                else:
+                    survivor_ids.add(int(u) if isinstance(u, str) else u)
+            
+            # Process each unit that entered the quest
+            map_items = save["maps"][town_id]["items"]
+            survivors_returned = 0
+            units_died = 0
+            
+            for quest_unit in quest_units:
+                unit_id = quest_unit["unit_id"]
+                if unit_id in survivor_ids:
+                    # Survived - add back to map
+                    map_items.append([
+                        unit_id, 
+                        quest_unit["x"], 
+                        quest_unit["y"], 
+                        0,  # orientation
+                        timestamp_now(), 
+                        0   # level
+                    ])
+                    survivors_returned += 1
+                else:
+                    # Died - add to graveyard
+                    if "graveyard" not in save["privateState"]:
+                        save["privateState"]["graveyard"] = []
+                    
+                    MAX_GRAVEYARD = 20
+                    if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
+                        save["privateState"]["graveyard"].pop(0)
+                    
+                    save["privateState"]["graveyard"].append({
+                        "unit_id": unit_id,
+                        "timestamp": timestamp_now(),
+                        "expires_at": timestamp_now() + (48 * 3600),
+                        "town_id": town_id
+                    })
+                    units_died += 1
+            
+            print(f"  -> Quest units: {survivors_returned} returned, {units_died} died")
+            
+            # Clear tracked quest units
+            save["privateState"]["quest_units"] = []
 
     elif cmd == Constant.CMD_ADD_COLLECTABLE:
         collection_id = args[0]
         collectible_id = args[1]
-        # TODO 
+        print(f"Add collectable {collectible_id} to collection {collection_id}")
+        pState = save["privateState"]
+        if "collectables" not in pState:
+            pState["collectables"] = {}
+        collection_key = str(collection_id)
+        if collection_key not in pState["collectables"]:
+            pState["collectables"][collection_key] = []
+        if collectible_id not in pState["collectables"][collection_key]:
+            pState["collectables"][collection_key].append(collectible_id)
 
     else:
         print(f"Unhandled command '{cmd}' -> args", args)
