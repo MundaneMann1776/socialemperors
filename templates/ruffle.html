@@ -1,126 +1,886 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <!-- Meta -->
-        <meta charset="utf-8"/>
-        <!-- Title and Icon -->
-        <title id="pageTitle">Social Empires</title>
-        <link rel="shortcut icon" href="img/icon.gif"/>
-        <link rel="icon" type="image/png" href="img/icon.gif"/>
-        <script src="https://unpkg.com/@ruffle-rs/ruffle/ruffle.js"></script>
-        <!--<script src="https://cdn.jsdelivr.net/npm/@ruffle-rs/ruffle/ruffle.js"></script>-->
-    </head>
-    <body style="font-family: 'lucida grande',tahoma,verdana,arial,sans-serif">
-    <center>
-        <!-- SESSION HEADER -->
-        <div id="header" style="width: 760px; margin-top: 50px;">
-            <div id="session" style="float: right;">
-                <p style="display:inline">Logged in as <b>{{save_info.name}}</b> lvl {{save_info.level}} (<a href="/">logout</a>)</p>
+
+<head>
+    <!-- Meta -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Title and Icon -->
+    <title id="pageTitle">Social Empires</title>
+    <link rel="shortcut icon" href="img/icon.gif" />
+    <link rel="icon" type="image/png" href="img/icon.gif" />
+    <script src="/assets/ruffle/ruffle.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'lucida grande', tahoma, verdana, arial, sans-serif;
+            background-color: #2a2a2a;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            background: linear-gradient(135deg, #4a7c10 0%, #5d9a15 100%);
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #3d5c0a;
+            flex-shrink: 0;
+        }
+
+        #header .logo {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #header .controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #header .session-info {
+            color: #fff;
+            font-size: 13px;
+        }
+
+        #header .session-info a {
+            color: #ffeb3b;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .btn-fullscreen {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-fullscreen:hover {
+            background: linear-gradient(135deg, #ffb74d 0%, #ff9800 100%);
+            transform: translateY(-1px);
+        }
+
+        .btn-refresh {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-refresh:hover {
+            background: linear-gradient(135deg, #5dade2 0%, #3498db 100%);
+            transform: translateY(-1px);
+        }
+
+        .btn-boost {
+            background: linear-gradient(135deg, #f39c12 0%, #d68910 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            text-decoration: none;
+        }
+
+        .btn-boost:hover {
+            background: linear-gradient(135deg, #f7b731 0%, #f39c12 100%);
+            transform: translateY(-1px);
+        }
+
+        /* Freeze warning modal */
+        .freeze-modal {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 10000;
+            max-width: 280px;
+            text-align: center;
+            border: 2px solid #e74c3c;
+        }
+
+        .freeze-modal h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+
+        .freeze-modal p {
+            font-size: 13px;
+            margin: 10px 0;
+            color: #ccc;
+        }
+
+        .freeze-modal .reload-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        .freeze-modal .dismiss-btn {
+            background: #555;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #game-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%);
+        }
+
+        #ruffle {
+            width: 100%;
+            height: 100%;
+            max-width: 1200px;
+            max-height: 900px;
+            aspect-ratio: 760 / 600;
+            background-color: #669C2C;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Fullscreen mode - maintain aspect ratio with black bars */
+        #game-container:fullscreen,
+        #game-container:-webkit-full-screen {
+            padding: 0;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-container:fullscreen #ruffle,
+        #game-container:-webkit-full-screen #ruffle {
+            /* Maintain aspect ratio - don't stretch */
+            width: auto;
+            height: calc(100vh - 60px);
+            max-width: 100vw;
+            max-height: calc(100vh - 60px);
+            aspect-ratio: 760 / 600;
+            border-radius: 0;
+        }
+
+        /* Fullscreen bottom toolbar - auto-hide, slides up on hover */
+        #fullscreen-toolbar {
+            display: none;
+        }
+
+        #game-container:fullscreen #fullscreen-toolbar,
+        #game-container:-webkit-full-screen #fullscreen-toolbar {
+            display: flex;
+            position: fixed;
+            bottom: -50px;
+            /* Hidden by default */
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: rgba(0, 0, 0, 0.9);
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            z-index: 9999;
+            transition: bottom 0.2s ease;
+        }
+
+        /* Show toolbar when hovering near bottom edge */
+        #game-container:fullscreen #fullscreen-toolbar:hover,
+        #game-container:-webkit-full-screen #fullscreen-toolbar:hover {
+            bottom: 0;
+        }
+
+        /* Invisible trigger zone at bottom */
+        #fullscreen-trigger {
+            display: none;
+        }
+
+        #game-container:fullscreen #fullscreen-trigger,
+        #game-container:-webkit-full-screen #fullscreen-trigger {
+            display: block;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 10px;
+            z-index: 9998;
+        }
+
+        #game-container:fullscreen #fullscreen-trigger:hover+#fullscreen-toolbar,
+        #game-container:-webkit-full-screen #fullscreen-trigger:hover+#fullscreen-toolbar {
+            bottom: 0;
+        }
+
+        #fullscreen-toolbar .fs-btn {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #fullscreen-toolbar .fs-btn:hover {
+            background: linear-gradient(135deg, #ff6b5b 0%, #e74c3c 100%);
+        }
+
+        #fullscreen-toolbar .fs-info {
+            color: #888;
+            font-size: 11px;
+        }
+
+        .keyboard-hint {
+            color: #888;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+
+        /* Cheat Menu Styles - Performance optimized with hardware acceleration */
+        .cheat-toggle-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s;
+        }
+
+        .cheat-toggle-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .cheat-menu {
+            position: fixed;
+            right: 0;
+            top: 0;
+            width: 320px;
+            height: 100vh;
+            background: rgba(20, 20, 30, 0.97);
+            border-left: 2px solid #9b59b6;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            z-index: 10001;
+            overflow-y: auto;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            will-change: transform;
+        }
+
+        .cheat-menu.hidden {
+            transform: translateX(100%);
+        }
+
+        .cheat-header {
+            background: linear-gradient(135deg, #2d1f3f 0%, #1a1225 100%);
+            padding: 12px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #9b59b6;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .cheat-header h2 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .cheat-header .close-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .cheat-search {
+            padding: 10px;
+            background: #1a1a2a;
+        }
+
+        .cheat-search input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #2a2a3a;
+            color: #fff;
+            font-size: 13px;
+        }
+
+        .cheat-section {
+            border-bottom: 1px solid #333;
+        }
+
+        .cheat-section h3 {
+            padding: 10px 15px;
+            margin: 0;
+            background: #252535;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .cheat-section h3:hover {
+            background: #303045;
+        }
+
+        .resource-btns {
+            padding: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .resource-btns button {
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+
+        .resource-btns button:active {
+            transform: scale(0.95);
+        }
+
+        .res-cash {
+            background: #27ae60;
+            color: white;
+        }
+
+        .res-gold {
+            background: #f1c40f;
+            color: #333;
+        }
+
+        .res-xp {
+            background: #3498db;
+            color: white;
+        }
+
+        .res-all {
+            background: #e74c3c;
+            color: white;
+            grid-column: span 2;
+        }
+
+        .unit-list {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: #1a1a25;
+        }
+
+        .unit-list.expanded {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .unit-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 15px;
+            border-bottom: 1px solid #2a2a35;
+            font-size: 12px;
+        }
+
+        .unit-item:hover {
+            background: #252530;
+        }
+
+        .unit-name {
+            flex: 1;
+        }
+
+        .unit-stats {
+            color: #888;
+            font-size: 10px;
+            margin: 0 8px;
+        }
+
+        .spawn-btn {
+            background: linear-gradient(135deg, #27ae60 0%, #1e8449 100%);
+            border: none;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 3px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .spawn-btn:hover {
+            filter: brightness(1.1);
+        }
+
+        .qty-select {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 2px 4px;
+            font-size: 11px;
+            margin-right: 5px;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- HEADER -->
+    <div id="header">
+        <div class="logo">🏰 Social Empires</div>
+        <div class="controls">
+            <span class="session-info">
+                Logged in as <b>{{save_info.name}}</b> lvl {{save_info.level}}
+                (<a href="/">logout</a>)
+            </span>
+            <button class="btn btn-refresh" onclick="location.reload()" title="Reload if units stop responding">
+                🔄 Refresh
+            </button>
+            <a href="/boost" class="btn btn-boost" title="Add 10k cash + 1M resources (reloads game)">
+                💰 Boost
+            </a>
+            <button class="btn btn-fullscreen" onclick="toggleFullscreen()" title="Press F for fullscreen">
+                ⛶ Fullscreen
+            </button>
+        </div>
+    </div>
+
+    <!-- GAME CONTAINER -->
+    <div id="game-container">
+        <div id="ruffle"></div>
+        <!-- Invisible hover trigger at bottom edge -->
+        <div id="fullscreen-trigger"></div>
+        <!-- Fullscreen toolbar - auto-hides, appears on hover at bottom -->
+        <div id="fullscreen-toolbar">
+            <span class="fs-info">ESC to exit</span>
+            <button class="fs-btn" onclick="toggleFullscreen()">✕ Exit</button>
+        </div>
+    </div>
+
+    <!-- CHEAT MENU TOGGLE BUTTON -->
+    <button id="cheat-toggle" class="cheat-toggle-btn" onclick="toggleCheatMenu()" title='Press " to toggle'>🎮</button>
+
+    <!-- CHEAT MENU PANEL -->
+    <div id="cheat-menu" class="cheat-menu hidden">
+        <div class="cheat-header">
+            <h2>🎮 CHEAT MENU</h2>
+            <button class="close-btn" onclick="toggleCheatMenu()">✕</button>
+        </div>
+
+        <div class="cheat-search">
+            <input type="text" id="unit-search" placeholder="🔍 Search units..." oninput="filterUnits(this.value)">
+        </div>
+
+        <div class="cheat-section">
+            <h3>💰 Resources</h3>
+            <div class="resource-btns">
+                <button class="res-cash" onclick="addResources({cash: 10000})">+10K Cash</button>
+                <button class="res-gold" onclick="addResources({gold: 1000000})">+1M Gold</button>
+                <button class="res-xp" onclick="addResources({xp: 100000})">+100K XP</button>
+                <button class="res-all"
+                    onclick="addResources({cash: 50000, gold: 5000000, xp: 500000, stone: 5000000, wood: 5000000, food: 5000000})">🚀
+                    MAX ALL</button>
             </div>
         </div>
-        <br>
-        <!-- GAME BAR -->
-        <div id="gameBar" style="margin-top: 15px;">
-            <!-- GAME BAR TOP -->
-            <div id="gamebar_top" style="width: 760px; height: 90px;">
-                <div style="float: left; margin-left:155px; padding: 4px; font-size: 10pt">
-                    <!-- VERSION -->
-                    <br><br><br>
-                    <p style="display: inline">{{ version }}</p>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('dragons')">🐉 Dragons <span id="dragons-arrow">▶</span></h3>
+            <div id="dragons-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('draggies')">🐲 Draggies <span id="draggies-arrow">▶</span></h3>
+            <div id="draggies-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('gods')">⚡ Gods <span id="gods-arrow">▶</span></h3>
+            <div id="gods-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('infantry')">⚔️ Infantry <span id="infantry-arrow">▶</span></h3>
+            <div id="infantry-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('ranged')">🏹 Ranged <span id="ranged-arrow">▶</span></h3>
+            <div id="ranged-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('siege')">💣 Siege <span id="siege-arrow">▶</span></h3>
+            <div id="siege-list" class="unit-list"></div>
+        </div>
+
+        <div class="cheat-section">
+            <h3 onclick="toggleCategory('special')">✨ Special <span id="special-arrow">▶</span></h3>
+            <div id="special-list" class="unit-list"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Ruffle player
+        var ruffle = window.RufflePlayer.newest();
+        var player = document.getElementById("ruffle").appendChild(ruffle.createPlayer());
+
+        // Make player fill container
+        player.style.width = '100%';
+        player.style.height = '100%';
+
+        player.load({
+            url: "http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/SELoader.swf?swftoload=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/{{GAMEVERSION}}",
+            backgroundColor: "#669C2C",
+            allowScriptAccess: false,
+            autoplay: true,
+            quality: "high",
+            scale: "showAll",
+            parameters: '\
+                    spdebug=notnull&brk=0\
+                    &staticUrl=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/&brk=0\
+                    &dynamicUrl=http://{{SERVERIP}}:5050/dynamic.flash1.dev.socialpoint.es/appsfb/socialempiresdev/srvempires/&brk=0\
+                    &skiphash12341=notnull&brk=0\
+                    &fb_sig_user={{save_info.userid}}&brk=0\
+                    &user_key=123456789&brk=0\
+                    &language=en&brk=0\
+                    &accessToken=AAABbZAm0wdMUBALsOrR0Ho68CLjaOT8SV3vftKg9mbo1zZColaW5FljRVaLxPGxXXnm1M98mTZCAttcQ4GHwvSyXfsyxYmvKMH8Hmn5iliSPnjvIsZA6&brk=0\
+                    &sex=m&brk=0\
+                    &lastLoggedIn=1349266517&brk=0\
+                    &dailyBonus=0&brk=0\
+                    &friendsInfo=[{"first_name":"AcidCaos","uid":"100000","pic_square":"http://{{SERVERIP}}:5050/img/profile/x.jpg"}]&brk=0\
+                    &serverTime={{serverTime}}&brk=0\
+                    &forceSyncError=1&brk=0\
+                    &forceAttackReload=0&brk=0\
+                    &forceQuestReload=0&brk=0'
+        });
+
+        // Fullscreen toggle function
+        function toggleFullscreen() {
+            var container = document.getElementById('game-container');
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        // Keyboard shortcut for fullscreen (F key)
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'f' || e.key === 'F') {
+                // Only trigger if not typing in an input
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    toggleFullscreen();
+                }
+            }
+        });
+
+        // ===== RUFFLE STABILITY: Freeze Detection & Error Handling =====
+
+        let lastActivityTime = Date.now();
+
+        // Track user interactions as activity
+        ['click', 'mousemove', 'keydown'].forEach(event => {
+            document.getElementById('ruffle').addEventListener(event, () => {
+                lastActivityTime = Date.now();
+            });
+        });
+
+        // Watchdog check every 30 seconds for frozen state
+        const FREEZE_THRESHOLD_MS = 90000; // 90 seconds
+        setInterval(() => {
+            const elapsed = Date.now() - lastActivityTime;
+            if (elapsed > FREEZE_THRESHOLD_MS && !document.getElementById('freeze-warning')) {
+                showFreezeWarning();
+            }
+        }, 30000);
+
+        function showFreezeWarning() {
+            const warning = document.createElement('div');
+            warning.id = 'freeze-warning';
+            warning.innerHTML = `
+                <div class="freeze-modal">
+                    <h3>⚠️ Game Stuck?</h3>
+                    <p>If units aren't responding to orders, click Reload:</p>
+                    <button class="reload-btn" onclick="location.reload()">
+                        🔄 Reload Game
+                    </button>
+                    <button class="dismiss-btn" onclick="dismissWarning()">
+                        ✕ Just Watching
+                    </button>
                 </div>
-            </div>
-            <!-- GAME BAR BUTTONS -->
-            <div id="gamebar_buttons" style="width: 760px;">
-                &nbsp;
-                <a class="gameBarButton" href="#"><div><img src="img/gift.png">Free Gifts</div></a>
-                <a class="gameBarButton gameBarButtonSelected" href="#"><div><img>Play</div></a>
-                <a class="gameBarButton" href="#"><div><img src="img/cash.png">Get Cash</div></a>
-                <a class="gameBarButton" href="https://discord.gg/zW5gSbQJBw" target="_blank"><div><img src="img/discord.png">Discord</div></a>
-                <a class="gameBarButton" href="https://github.com/AcidCaos/socialemperors#readme" target="_blank"><div><img src="img/github.png">GitHub</div></a>
-            </div>
-            <style>
-                #gameBar {
-                    text-align: left;
-                    width: 760px;
-                    margin-bottom: 0px;
-                    padding: 0px;
-                    background-color:rgb(137, 187, 15);
-                    background-image: url('img/Gamebar_byTrevo.png');
-                    background-repeat: no-repeat;
-                    background-size: contain;
-                    border-bottom: solid #6e5335 3px;
-                }
-                .gameBarButton {
-                    display: inline-block;
-                    height: 19px;
-                    color: black;
-                    border: solid 1.5px;
-                    border-color: #9e7747;
-                    background-color:rgb(255, 245, 131);
-                    border-top-left-radius: 5px;
-                    border-top-right-radius: 5px;
-                    cursor: pointer;
-                    text-decoration: none;
-                    font-size: 11pt;
-                    padding: 2px 3px 1px 3px; 
-                }
+            `;
+            document.body.appendChild(warning);
+        }
 
-                .gameBarButtonSelected {
-                    background-color:rgb(233, 221, 81);
-                }
+        function dismissWarning() {
+            document.getElementById('freeze-warning')?.remove();
+            lastActivityTime = Date.now();
+        }
 
-                .gameBarButton img {
-                    height: 17px;
-                    padding-right: 3px;
-                    vertical-align: middle;
-                }
+        // Catch WASM/Ruffle errors
+        window.addEventListener('error', (event) => {
+            const msg = event.message || '';
+            if (msg.includes('RuntimeError') || msg.includes('wasm') || msg.includes('Ruffle')) {
+                console.error('[Ruffle Error]', msg);
+                showFreezeWarning();
+            }
+        });
 
-                .gameBarButton:hover {
-                    background-color:rgb(250, 237, 90);
-                    text-decoration: none;
-                }
+        window.addEventListener('unhandledrejection', (event) => {
+            const reason = String(event.reason);
+            if (reason.includes('wasm') || reason.includes('Ruffle')) {
+                console.warn('[Ruffle Promise Rejection]', reason);
+            }
+        });
 
-                .gameBarButtonSelected:hover {
-                    background-color:rgb(223, 212, 82);
-                }
+        // ===== CHEAT MENU SYSTEM =====
 
-            </style>
-        </div>
-        <!-- EMBED GAME -->
-        <object>
-            <div id='ruffle'></div>
-            <script>
-                var ruffle = window.RufflePlayer.newest(),
-                player = Object.assign(document.getElementById("ruffle").appendChild(ruffle.createPlayer()), {
-                    width: 760,
-                    height: 600,
-                    style: 'width: 760px; height: 600px; background-color: #669C2C;',
+        let cheatMenuOpen = false;
+        let unitsLoaded = false;
+        let unitData = {};
+
+        // Toggle cheat menu
+        function toggleCheatMenu() {
+            const menu = document.getElementById('cheat-menu');
+            cheatMenuOpen = !cheatMenuOpen;
+            menu.classList.toggle('hidden', !cheatMenuOpen);
+
+            // Lazy load units on first open
+            if (cheatMenuOpen && !unitsLoaded) {
+                loadUnits();
+            }
+        }
+
+        // Keyboard shortcut: " key
+        document.addEventListener('keydown', function (e) {
+            if (e.key === '"' || (e.shiftKey && e.key === "'")) {
+                if (document.activeElement.tagName !== 'INPUT') {
+                    toggleCheatMenu();
+                }
+            }
+        });
+
+        // Add resources via API
+        async function addResources(resources) {
+            try {
+                const response = await fetch('/api/cheat/resources', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(resources)
                 });
-                player.load({ // https://ruffle.rs/js-docs/master/interfaces/URLLoadOptions.html
-                    url: "http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/SELoader.swf?swftoload=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/{{GAMEVERSION}}",
-                    backgroundColor: "#669C2C",
-                    allowScriptAccess: false,
-                    autoplay: true,
-                    parameters: '\
-                        spdebug=notnull&brk=0\
-                        &staticUrl=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/&brk=0\
-                        &dynamicUrl=http://{{SERVERIP}}:5050/dynamic.flash1.dev.socialpoint.es/appsfb/socialempiresdev/srvempires/&brk=0\
-                        &skiphash12341=notnull&brk=0\
-                        &fb_sig_user={{save_info.userid}}&brk=0\
-                        &user_key=123456789&brk=0\
-                        &language=en&brk=0\
-                        &accessToken=AAABbZAm0wdMUBALsOrR0Ho68CLjaOT8SV3vftKg9mbo1zZColaW5FljRVaLxPGxXXnm1M98mTZCAttcQ4GHwvSyXfsyxYmvKMH8Hmn5iliSPnjvIsZA6&brk=0\
-                        &sex=m&brk=0\
-                        &lastLoggedIn=1349266517&brk=0\
-                        &dailyBonus=0&brk=0\
-                        &friendsInfo[{"first_name":"AcidCaos","uid":"100000","pic_square":"http://{{SERVERIP}}:5050/img/profile/x.jpg"}}]&brk=0\
-                        &serverTime={{serverTime}}&brk=0\
-                        &forceSyncError=1&brk=0\
-                        &forceAttackReload=0&brk=0\
-                        &forceQuestReload=0&brk=0'
+                if (response.ok) {
+                    reloadRuffle();
+                    toggleCheatMenu();
+                } else {
+                    alert('Failed to add resources');
+                }
+            } catch (err) {
+                console.error('Cheat error:', err);
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Reload only the Ruffle player (faster than full page reload)
+        function reloadRuffle() {
+            const container = document.getElementById('ruffle');
+            // Clear existing player
+            container.innerHTML = '';
+
+            // Create new player
+            var ruffle = window.RufflePlayer.newest();
+            var newPlayer = container.appendChild(ruffle.createPlayer());
+            newPlayer.style.width = '100%';
+            newPlayer.style.height = '100%';
+
+            // Reload with same config
+            newPlayer.load({
+                url: "http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/SELoader.swf?swftoload=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/flash/{{GAMEVERSION}}",
+                backgroundColor: "#669C2C",
+                allowScriptAccess: false,
+                autoplay: true,
+                quality: "high",
+                scale: "showAll",
+                parameters: '\
+                    spdebug=notnull&brk=0\
+                    &staticUrl=http://{{SERVERIP}}:5050/default01.static.socialpointgames.com/static/socialempires/&brk=0\
+                    &dynamicUrl=http://{{SERVERIP}}:5050/dynamic.flash1.dev.socialpoint.es/appsfb/socialempiresdev/srvempires/&brk=0\
+                    &skiphash12341=notnull&brk=0\
+                    &fb_sig_user={{save_info.userid}}&brk=0\
+                    &user_key=123456789&brk=0\
+                    &language=en&brk=0\
+                    &accessToken=AAABbZAm0wdMUBALsOrR0Ho68CLjaOT8SV3vftKg9mbo1zZColaW5FljRVaLxPGxXXnm1M98mTZCAttcQ4GHwvSyXfsyxYmvKMH8Hmn5iliSPnjvIsZA6&brk=0\
+                    &sex=m&brk=0\
+                    &lastLoggedIn=1349266517&brk=0\
+                    &dailyBonus=0&brk=0\
+                    &friendsInfo=[{"first_name":"AcidCaos","uid":"100000","pic_square":"http://{{SERVERIP}}:5050/img/profile/x.jpg"}]&brk=0\
+                    &serverTime={{serverTime}}&brk=0\
+                    &forceSyncError=1&brk=0\
+                    &forceAttackReload=0&brk=0\
+                    &forceQuestReload=0&brk=0'
+            });
+
+            // Update global player reference
+            player = newPlayer;
+        }
+
+        // Spawn unit via API
+        async function spawnUnit(unitId, quantity = 1) {
+            try {
+                const response = await fetch('/api/cheat/spawn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        unit_id: unitId,
+                        quantity: quantity,
+                        x: 50,
+                        y: 50
+                    })
                 });
-            </script>
-        </object>
-    </center>
-    </body>
+                if (response.ok) {
+                    // Reload only Ruffle, not entire page
+                    reloadRuffle();
+                    // Close cheat menu
+                    toggleCheatMenu();
+                } else {
+                    alert('Failed to spawn unit');
+                }
+            } catch (err) {
+                console.error('Spawn error:', err);
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Load units from API (lazy loaded)
+        async function loadUnits() {
+            const categories = ['dragons', 'draggies', 'gods', 'infantry', 'ranged', 'siege', 'special'];
+
+            for (const cat of categories) {
+                const list = document.getElementById(cat + '-list');
+                list.innerHTML = '<div class="loading-spinner">Loading...</div>';
+            }
+
+            try {
+                const response = await fetch('/api/units');
+                const data = await response.json();
+                unitData = data;
+
+                for (const cat of categories) {
+                    const list = document.getElementById(cat + '-list');
+                    const units = data[cat]?.units || [];
+
+                    if (units.length === 0) {
+                        list.innerHTML = '<div class="loading-spinner">No units</div>';
+                        continue;
+                    }
+
+                    list.innerHTML = units.map(u => `
+                        <div class="unit-item" data-name="${u.name.toLowerCase()}" data-id="${u.id}">
+                            <span class="unit-name">${u.name}</span>
+                            <span class="unit-stats">ATK:${u.attack} HP:${u.life}</span>
+                            <select class="qty-select" onchange="this.dataset.qty=this.value">
+                                <option value="1">x1</option>
+                                <option value="5">x5</option>
+                                <option value="10">x10</option>
+                            </select>
+                            <button class="spawn-btn" onclick="spawnUnit(${u.id}, parseInt(this.previousElementSibling.value))">Spawn</button>
+                        </div>
+                    `).join('');
+                }
+
+                unitsLoaded = true;
+            } catch (err) {
+                console.error('Failed to load units:', err);
+            }
+        }
+
+        // Toggle category expansion
+        function toggleCategory(category) {
+            const list = document.getElementById(category + '-list');
+            const arrow = document.getElementById(category + '-arrow');
+            const isExpanded = list.classList.toggle('expanded');
+            arrow.textContent = isExpanded ? '▼' : '▶';
+        }
+
+        // Filter units by search (debounced)
+        let searchTimeout;
+        function filterUnits(query) {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                const q = query.toLowerCase();
+                document.querySelectorAll('.unit-item').forEach(item => {
+                    const name = item.dataset.name || '';
+                    item.style.display = name.includes(q) ? 'flex' : 'none';
+                });
+
+                // Auto-expand categories with matches
+                if (q.length > 0) {
+                    document.querySelectorAll('.unit-list').forEach(list => {
+                        const hasVisible = list.querySelector('.unit-item[style="display: flex"]');
+                        if (hasVisible) list.classList.add('expanded');
+                    });
+                }
+            }, 200);
+        }
+    </script>
+</body>
+
 </html>
