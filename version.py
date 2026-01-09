@@ -2,8 +2,8 @@ import random
 
 from engine import timestamp_now
 
-version_name = "alpha 0.04"
-version_code = "0.04a"
+version_name = "alpha 0.05"
+version_code = "0.05a"
 
 def migrate_loaded_save(save: dict) -> bool:
 
@@ -63,9 +63,21 @@ def migrate_loaded_save(save: dict) -> bool:
         save["version"] = "0.04a"
         print("   > migrated to 0.04a")
 
-    # 0.04a -> 0.05a
-    #if save["version"] == "0.04a":
-    #    save["version"] = "0.05a"
-    #    print("   > migrated to 0.05a")
+    # 0.04a -> 0.05a (Code quality release)
+    if save["version"] == "0.04a":
+        # Ensure graveyard exists
+        if "graveyard" not in save["privateState"]:
+            save["privateState"]["graveyard"] = []
+        
+        # Ensure quest_units exists (will be cleaned by sessions.py if stale)
+        if "quest_units" not in save["privateState"]:
+            save["privateState"]["quest_units"] = []
+        
+        # Ensure questsRank exists for quest progress tracking
+        if "questsRank" not in save["privateState"]:
+            save["privateState"]["questsRank"] = {}
+        
+        save["version"] = "0.05a"
+        print("   > migrated to 0.05a")
 
     return True
