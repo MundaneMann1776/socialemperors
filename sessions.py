@@ -10,8 +10,12 @@ from version import version_code
 from engine import timestamp_now
 from version import migrate_loaded_save
 from constants import Constant
+from game_constants import SAVE_COUNT_BEFORE_BACKUP
 
 from bundle import VILLAGES_DIR, SAVES_DIR
+
+# Track save count for periodic backups
+_save_counter = 0
 
 __villages = {}  # ALL static neighbors
 '''__villages = {
@@ -58,6 +62,21 @@ def clean_graveyard(save):
         removed_count = len(graveyard) - len(new_graveyard)
         save["privateState"]["graveyard"] = new_graveyard
         print(f"   - Removed {removed_count} expired units from graveyard")
+        return True
+    
+    return False
+
+
+def clean_quest_units(save):
+    """Clean orphaned quest_units from a save (units stuck in limbo from crashes)."""
+    if "privateState" not in save:
+        return False
+    
+    quest_units = save["privateState"].get("quest_units", [])
+    if quest_units:
+        count = len(quest_units)
+        save["privateState"]["quest_units"] = []
+        print(f"   - Cleaned {count} orphaned quest units (server crash recovery)")
         return True
     
     return False
@@ -114,9 +133,10 @@ def load_saved_villages():
             map_name = '?'
         print(f"({map_name}) Ok.")
         __saves[str(USERID)] = save
-        modified = migrate_loaded_save(save) # check save version for migration
-        cleaned = clean_graveyard(save)      # check for expired items
-        if modified or cleaned:
+        modified = migrate_loaded_save(save)     # check save version for migration
+        cleaned_graveyard = clean_graveyard(save) # check for expired graveyard items
+        cleaned_quests = clean_quest_units(save)  # check for orphaned quest units
+        if modified or cleaned_graveyard or cleaned_quests:
             save_session(USERID)
     
 
@@ -278,8 +298,17 @@ def backup_session(USERID: str) -> bool:
     return True
 
 def save_session(USERID: str):
+    global _save_counter
+    
     file = f"{USERID}.save.json"
     print(f" * Saving village at {file}... ", end='')
+    
+    # Periodic backup (every SAVE_COUNT_BEFORE_BACKUP saves)
+    _save_counter += 1
+    if _save_counter >= SAVE_COUNT_BEFORE_BACKUP:
+        _save_counter = 0
+        backup_session(USERID)
+    
     village = session(USERID)
     with open(os.path.join(SAVES_DIR, file), 'w') as f:
         json.dump(village, f, indent=4)
