@@ -4,6 +4,8 @@ from sessions import session, save_session
 from get_game_config import get_game_config, get_level_from_xp, get_name_from_item_id, get_attribute_from_mission_id, get_xp_from_level, get_attribute_from_item_id, get_item_from_subcat_functional
 from constants import Constant
 from engine import apply_cost, apply_collect, apply_collect_xp, timestamp_now
+from helpers import add_to_graveyard, safe_list_get, safe_gift_decrement
+from game_constants import MIN_RESURRECTION_COST, RESURRECTION_COST_DIVISOR
 
 def get_strategy_type(id):
     if id == 8:
@@ -113,26 +115,8 @@ def do_command(USERID, cmd, args):
             if get_attribute_from_item_id(id, "cost_type") != "c":
                 apply_cost(save["playerInfo"], save["maps"][town_id], id, price_multiplier)
         if reason == 'KILL':
-            # Add to graveyard for potential resurrection
-            if "graveyard" not in save["privateState"]:
-                save["privateState"]["graveyard"] = []
-            
-            # Capacity limit (original game had 20 slots)
-            MAX_GRAVEYARD = 20
-            if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
-                # Remove oldest entry
-                save["privateState"]["graveyard"].pop(0)
-                print(f"  -> Graveyard full, removed oldest entry")
-            
-            # Add entry with 48-hour expiration
-            graveyard_entry = {
-                "unit_id": id,
-                "timestamp": timestamp_now(),
-                "expires_at": timestamp_now() + (48 * 3600),  # 48 hours
-                "town_id": town_id
-            }
-            save["privateState"]["graveyard"].append(graveyard_entry)
-            print(f"  -> Added to graveyard (expires in 48 hours)")
+            # Add to graveyard for potential resurrection (uses helper to avoid duplication)
+            add_to_graveyard(save, id, town_id)
         
         if reason == 'SQEST':
             # Track units entering quest for later survivor/death processing
@@ -251,15 +235,26 @@ def do_command(USERID, cmd, args):
         map = save["maps"][town_id]
         if land_id in map["expansions"]:
             return
-        # Substract resources
+        
+        # Subtract resources with bounds checking
         expansion_prices = get_game_config()["expansion_prices"]
-        exp = expansion_prices[len(map["expansions"]) - 1]
+        current_expansion_count = len(map["expansions"])
+        
+        # Use safe index: clamp to valid range
+        price_index = max(0, min(current_expansion_count - 1, len(expansion_prices) - 1))
+        if price_index < 0 or not expansion_prices:
+            print("  -> WARNING: No expansion prices configured, expansion is free")
+            exp = {"coins": 0, "cash": 0}
+        else:
+            exp = expansion_prices[price_index]
+        
         if resource == "gold":
-            to_substract = exp["coins"]
+            to_substract = exp.get("coins", 0)
             save["maps"][town_id]["coins"] = max(save["maps"][town_id]["coins"] - to_substract, 0)
         elif resource == "cash":
-            to_substract = exp["cash"]
+            to_substract = exp.get("cash", 0)
             save["playerInfo"]["cash"] = max(save["playerInfo"]["cash"] - to_substract, 0)
+        
         # Add expansion
         map["expansions"].append(land_id)
 
@@ -493,26 +488,8 @@ def do_command(USERID, cmd, args):
         town_id = args[1] if len(args) > 1 else 0
         print(f"Put unit {get_name_from_item_id(unit_id)} (ID: {unit_id}) into graveyard")
         
-        # Initialize graveyard if needed
-        if "graveyard" not in save["privateState"]:
-            save["privateState"]["graveyard"] = []
-        
-        # Capacity limit (original game had 20 slots)
-        MAX_GRAVEYARD = 20
-        if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
-            # Remove oldest entry
-            save["privateState"]["graveyard"].pop(0)
-            print("  -> Graveyard full, removed oldest")
-        
-        # Add to graveyard with 48-hour expiration
-        graveyard_entry = {
-            "unit_id": unit_id,
-            "timestamp": timestamp_now(),
-            "expires_at": timestamp_now() + (48 * 3600),  # 48 hours
-            "town_id": town_id
-        }
-        save["privateState"]["graveyard"].append(graveyard_entry)
-        print(f"  -> Added to graveyard (expires in 48 hours)")
+        # Use helper to add to graveyard (avoids code duplication)
+        add_to_graveyard(save, unit_id, town_id)
 
     elif cmd == Constant.CMD_RESURRECT_HERO:
         unit_id = args[0]
@@ -521,15 +498,32 @@ def do_command(USERID, cmd, args):
         town_id = args[3]
         bool_used_potion = len(args) > 4 and args[4] == '1'
         print("Resurrect", str(get_name_from_item_id(unit_id)), "from graveyard")
-        # pay
+        
+        # Pay for resurrection
         if bool_used_potion:
-            quantity = 1
-            save["privateState"]["potion"] = max(int(save["privateState"]["potion"] - quantity), 0)
+            # Validate potion count before using
+            current_potions = save["privateState"].get("potion", 0)
+            if current_potions <= 0:
+                print("  -> ERROR: No potions available for resurrection")
+                return
+            save["privateState"]["potion"] = current_potions - 1
         else:
-            # Pay with cash - cost based on unit strength (default 10 cash)
+            # Pay with cash - cost based on unit strength
             unit_life = get_attribute_from_item_id(unit_id, "life")
-            resurrection_cost = max(5, int(unit_life) // 100) if unit_life else 10
+            # Handle edge cases: None, 0, or invalid values
+            try:
+                life_value = int(unit_life) if unit_life else 0
+            except (TypeError, ValueError):
+                life_value = 0
+            
+            # Calculate cost using constants (min cost if unit has 0 life)
+            if life_value > 0:
+                resurrection_cost = max(MIN_RESURRECTION_COST, life_value // RESURRECTION_COST_DIVISOR)
+            else:
+                resurrection_cost = MIN_RESURRECTION_COST * 2  # Default cost for unknown units
+            
             save["playerInfo"]["cash"] = max(save["playerInfo"]["cash"] - resurrection_cost, 0)
+        
         # Place unit
         collected_at_timestamp = timestamp_now()
         level = 0
@@ -569,18 +563,23 @@ def do_command(USERID, cmd, args):
         print(f"Start quest {quest_id}")
 
     elif cmd == Constant.CMD_END_QUEST:
-        data = json.loads(args[0])
-        town_id = data["map"]
-        gold_gained = data["resources"]["g"]
-        xp_gained = data["resources"]["x"]
-        units = data["units"]  # List of surviving unit IDs
-        win = data["win"] == 1
-        duration_sec = data["duration"]
-        voluntary_end = data["voluntary_end"] == 1
-        quest_id = int(data["quest_id"])
-        item_rewards = data["item_rewards"] if "item_rewards" in data else None
-        activators_left = data["activators_left"] if "activators_left" in data else None
-        difficulty = int(data["difficulty"])  # 1, 2, or 3 stars
+        try:
+            data = json.loads(args[0])
+        except (json.JSONDecodeError, TypeError, IndexError) as e:
+            print(f"CMD_END_QUEST: Failed to parse quest data: {e}")
+            return
+        
+        town_id = data.get("map", 0)
+        gold_gained = data.get("resources", {}).get("g", 0)
+        xp_gained = data.get("resources", {}).get("x", 0)
+        units = data.get("units", [])  # List of surviving unit IDs
+        win = data.get("win") == 1
+        duration_sec = data.get("duration", 0)
+        voluntary_end = data.get("voluntary_end") == 1
+        quest_id = int(data.get("quest_id", 0))
+        item_rewards = data.get("item_rewards")
+        activators_left = data.get("activators_left")
+        difficulty = int(data.get("difficulty", 1))  # 1, 2, or 3 stars
 
         # Always award resources (even on loss you get some)
         save["maps"][town_id]["coins"] += int(gold_gained)
@@ -607,10 +606,12 @@ def do_command(USERID, cmd, args):
             quest_times = save["maps"][town_id].get("questTimes", {})
             last_quest_times = save["maps"][town_id].get("lastQuestTimes", {})
             
-            # Convert old array format to dict if needed
+            # Convert old array format to dict if needed (with warning)
             if isinstance(quest_times, list):
+                print(f"  -> WARNING: Migrating questTimes from array to dict (old data discarded)")
                 quest_times = {}
             if isinstance(last_quest_times, list):
+                print(f"  -> WARNING: Migrating lastQuestTimes from array to dict (old data discarded)")
                 last_quest_times = {}
             
             # Update with best/last times
@@ -658,20 +659,8 @@ def do_command(USERID, cmd, args):
                     ])
                     survivors_returned += 1
                 else:
-                    # Died - add to graveyard
-                    if "graveyard" not in save["privateState"]:
-                        save["privateState"]["graveyard"] = []
-                    
-                    MAX_GRAVEYARD = 20
-                    if len(save["privateState"]["graveyard"]) >= MAX_GRAVEYARD:
-                        save["privateState"]["graveyard"].pop(0)
-                    
-                    save["privateState"]["graveyard"].append({
-                        "unit_id": unit_id,
-                        "timestamp": timestamp_now(),
-                        "expires_at": timestamp_now() + (48 * 3600),
-                        "town_id": town_id
-                    })
+                    # Died - add to graveyard using helper
+                    add_to_graveyard(save, unit_id, town_id)
                     units_died += 1
             
             print(f"  -> Quest units: {survivors_returned} returned, {units_died} died")
