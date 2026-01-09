@@ -31,7 +31,12 @@ host = '127.0.0.1'
 port = 5050
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
-app.config['SECRET_KEY'] = "SUPERSECUREKEY"
+
+# Security: Generate a cryptographically secure secret key
+# This changes on each server restart, but that's acceptable for a local game server
+import secrets
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+print(f" [+] Flask secret key: {'(from environment)' if 'FLASK_SECRET_KEY' in os.environ else '(generated)'}")
 
 # Register cheat menu API blueprint
 from cheat_api import cheat
@@ -124,12 +129,25 @@ def boost():
     USERID = session['USERID']
     save = get_save(USERID)
     
+    # Rate limiting: check last boost timestamp
+    from game_constants import BOOST_COOLDOWN_SECONDS
+    last_boost = save.get("_last_boost", 0)
+    now = timestamp_now()
+    
+    if now - last_boost < BOOST_COOLDOWN_SECONDS:
+        remaining = BOOST_COOLDOWN_SECONDS - (now - last_boost)
+        print(f"[BOOST] Rate limited for {USERID}, {remaining}s remaining")
+        return f"<h1>Rate Limited</h1><p>Please wait {remaining} seconds before boosting again.</p><a href='/play.html'>Back to game</a>", 429
+    
     # Add resources
     save["playerInfo"]["cash"] = save["playerInfo"].get("cash", 0) + 10000
     save["maps"][0]["coins"] = save["maps"][0].get("coins", 0) + 1000000
     save["maps"][0]["stone"] = save["maps"][0].get("stone", 0) + 1000000
     save["maps"][0]["wood"] = save["maps"][0].get("wood", 0) + 1000000
     save["maps"][0]["food"] = save["maps"][0].get("food", 0) + 1000000
+    
+    # Record boost timestamp for rate limiting
+    save["_last_boost"] = now
     
     # Save to disk
     save_session(USERID)
@@ -354,6 +372,6 @@ def get_continent_ranking_response():
 print (" [+] Running server...")
 
 if __name__ == '__main__':
-    import secrets
-    app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(16))
+    # Secret key is already set at import time (line 37)
     app.run(host=host, port=port, debug=False)
+
